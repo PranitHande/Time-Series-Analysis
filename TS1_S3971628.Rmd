@@ -1,0 +1,523 @@
+---
+title: "MATH1318/2204 Time Series Analysis - Assignment 1"
+author: "Pranit Hande (S3971628)"
+date: "2024-03-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Enviornment Setup 
+```{r}
+rm(list=ls())
+setwd("C:\\Users\\prani\\OneDrive\\Desktop\\TimeSeries\\Assignments\\Assign1")
+
+```
+## Importing all the required libraries
+```{r}
+library(TSA)
+library(readr)
+```
+
+# AIM
+1. Find the best fitting model among the linear, quadratic, cosine, cyclical or seasonal trend models by implementing the model-building strategy.
+2. Give the predictions for the next 5 trading days using the best model you find
+
+## Extracting the data
+```{r}
+# Reading the data
+stockData <- read_csv("assignment1Data2024.csv", col_names = TRUE)
+colnames(stockData) <- c("Trading_Day", "Investment_Return")
+head(stockData)
+```
+Class function to check if the format of the dataset is dataframe.Now that we confirmed that it is a dataframe we will use ts() function to convert it into a time series object.
+
+```{r}
+class(stockData)
+```
+```{r}
+stockDataTs <- ts(stockData$Investment_Return) 
+class(stockDataTs)
+```
+## Analysis of the time series object in terms of the 5 valid points
+
+We explore the stockDataTs object by plotting a  time series plot and examine the plot in terms of Trend, Seasonality, Change of Variance, Behavior and Change point.
+
+```{r}
+#Plotting the time series plot
+plot(stockDataTs, ylab = "Investment return(AUD 100)", xlab = "Trading days", type = 'o', main = "Time series plot of investment return over an year")
+
+```
+
+### THE 5 VALID POINTS
+1.TREND: There is downward trend from 1 to 100 . And then it starts to level up and gradually increases from 100. 
+
+2.SEASONALITY: A repeating pattern can be observed from 50 to 90 and another pattern can be seen from 100 to 150.
+
+3.CHANGING VARIANCE : Fluctuations can be seen from 100 and they tend to get a bit larger at the end.
+
+4.BEHAVIOR: Due to the presence of seasonality it is hard to tell whether there is any behavior in the plot.But the plot might have some moving average behavior.
+
+5.CHANGING POINT: There is no sudden increase or decrease in the plot which eliminates the presence of a change point.
+
+# DATA EXPLORATION
+
+## Calculating Lags
+
+After we load the data and plot the time series data we calculate the lags.
+Lag is a essential delay.For a discrete set of observations , for lag k,where k =1,2,...,n, you compare the time series with a lagged time series, this means you shift the time series by k before comparing it with itself.
+If we continue doing this for the entire length of the time series you get an autocorrelation function.
+From the values of the autocorrealtion you can see how much it correlates with itself.
+
+### FIRST LAG
+```{r}
+#observations of investment returns
+y = stockDataTs
+
+#first lag of data
+x = zlag(stockDataTs)
+
+#Creating index to get rid of NA values in x
+index = 2:length(x)
+
+cat("The correlation for the first lag is: ",cor(y[index], x[index]))
+
+#correlation plot of first lag
+plot(y = stockDataTs, x = zlag(stockDataTs), ylab = "Investment return( AUD 100)(t)", xlab = "Investment return with 1 day lag(t-1)", main = "Scatterplot of the neighbouring investment returns values")
+
+```
+
+The value of correlation for the first lag is 0.9868369 which signifies a strong positive correlation.So we can conclude that the previous days investment return is going to have a strong impact on the next days investment return.Autoregressive behaviour brings in higher correlation especially in the first lag.
+
+
+### SECOND LAG
+
+```{r}
+#observations of investment returns
+y = stockDataTs
+
+#second lag of the data
+x = zlag(zlag(stockDataTs))
+
+#Creating index to get rid of NA values in x
+index = 3:length(x)
+
+cat("The correlation for the second lag is: ",cor(y[index], x[index]))
+
+#correlation plot of second lag
+plot(y = stockDataTs, x = zlag(zlag(stockDataTs)), ylab = "Investment return( AUD 100)(t)", xlab = "Investment return with 2 days lag(t-2)", main = "Scatterplot of the neighbouring investment returns values")
+
+```
+
+The correlation value of second lag is 0.963663 which indicates a strong positive correlation. 
+This can mean that there is a significant relationship between investment return of the current day and investment return from two days ago.
+
+# MODEL FITTING
+
+## LINEAR TREND MODEL
+This deterministic linear model is expressed as follows,
+                      μt = β0 + β1t
+where β0 is intercept,β1 is the linear trend.
+
+
+```{r}
+#To fit the trend model we extract the time first from the time series data
+t <- time(stockDataTs)
+
+#Fitting the linear model
+
+Lmod = lm(stockDataTs ~ t) 
+
+#Summary of the model
+summary(Lmod)
+
+```
+### INSIGHTS FROM THE LINEAR TREND MODEL
+
+1. The intercept coefficient is less than significance level 0.05, indicates that it is significant. This shows the expected value of dependent variable are significantly different from zero when the independent variable(t) is zero.
+
+2. The slope coefficient with pvalue 0.0881 exceed the significance level 0.05 indicating that it is statistically insignificant. 
+
+3. The R-squared value stays extremely low at 0.01079, which means that the line explains only 1.079% of the linear variation in the time series data. 
+
+4. The p-value of the overall model exceeds the significance value of 0.05 which means that this model wont fit good.
+
+
+```{r}
+#Plotting the linear trend model
+plot(stockDataTs, ylab = "Investment return(AUD 100)", xlab = "Trading days", type = 'o',main = "Fitted linear model to the stocks data.")
+
+abline(Lmod, col= "blue")
+```
+
+The plot shows that linear model is not a good fit for the investment return time series data.
+For further evaluation we conduct residual analysis on the linear model. 
+
+## RESIDUAL ANALYSIS OF THE LINEAR TREND MODEL.
+
+```{r}
+
+Lmod_RA = rstudent(Lmod)
+ 
+par(mfrow=c(2,2))
+
+# QQ Plot
+y=Lmod_RA
+qqnorm(y, main = "QQ plot of Standardised residuals")
+qqline(y, col = 2, lwd = 1, lty = 2)
+
+# Histogram
+
+hist(Lmod_RA,xlab='Standardized Residuals', ylab = 'Frequency',main = "Histogram of Standardised residuals")
+
+# Time Series Plot
+
+plot(y = Lmod_RA, x = as.vector(time(stockDataTs)),xlab = 'Trading Days', ylab='Standardized Residuals',type='o',main = "Time series plot of the Standardised residuals")
+
+# ACF Test
+
+acf(Lmod_RA, main = "AutoCorrelation for linear trend model.")
+
+
+
+```
+```{r}
+# Shapiro-Wilk Normality Test
+
+shapiro.test(Lmod_RA)
+
+```
+### RESIDUAL ANALYSIS INSIGHTS OF THE LINEAR TREND MODEL.
+
+1.For QQ plot we have to check whether all the dots are aligned with the reference line , which confirms the normality on the data. For linear model the right tail of the are off the line and a very few amount of dots are aligned on the line. Futhermore the left tail starts to go off the line. This indicates no normality.
+
+2.Histogram is a more dense between -1 and 1 , and has no symmetry which is required to prove normailty.
+
+3.We aim to see a completely random patterns in the time series plot of residuals or standardised residuals , which means each residual should fluctuate randomly across the axis.The plot here seems to have some seasonality which denies the objective of having random patterns of residuals.
+
+4.We expect to see all the bars in ACF plot inside the blue dotted confidence level lines. In the plot for the linear trend model all the bars are above the line which shows significance.This means the residuals are correlated. And there is autocorrelation which we are trying to avoid.
+
+5.To evaluate the normality of the residuals we use the Shapiro Wilk test. If the p-value is greater than the significance level 0.05 then we conclude not to reject the null hypothesis, confirming the data is normally distributed.
+The p-value of the linear model successfully statisfies the condition which means the linear trend has normal distribution.
+
+In conclusion the standardized residuals showed seasonality and were not normally distributed, which indicates that the model failed to capture underlying information of the data. As a result linear model is not an appropriate fit for our time series data.
+
+## QUADRATIC MODEL
+
+The deterministic quadratic model is expressed as follows,
+                  μt = β0 + β1t + β2t^ 2
+where β0 is intercept,β1 is the linear trend and β2 corresponds to quadratic trend in time.
+
+```{r}
+#We extract t^2
+t = time(stockDataTs)
+t2 = t^2
+
+#Fitting the quadratic model
+Qmod = lm(stockDataTs ~ t + t2)
+
+#summary of the model
+summary(Qmod)
+
+```
+### INSIGHTS FROM THE QUADRATIC MODEL
+
+1. The intercept estimate is 2.141e+02 suggests that the estimated value of the dependent variable when both linear(β1) and quadratic(β2) values are zero.
+
+2. The t estimate is -4.871e+00 which indicates the rate of change in the dependent variable per unit change in independent variable.
+
+3. The t^2 estimate is 2.612e-02 exlpains the curvature in the relationship between the two variables.
+
+4. All coefficients have p-values which are less than the significance level 0.05, which make them highly significant.
+
+5. The coefficient of determination is 0.8523 which means the curvature explains 85% of the linear variation in the data.
+
+6. Overall p-value of the quadratic model is extremely less than 0.05 which makes the model a good fit for the data and highly significant.
+
+
+```{r}
+#Plotting the quadratic model
+plot(ts(fitted(Qmod)), ylim = c(min(c(fitted(Qmod),
+    as.vector(stockDataTs))), max(c(fitted(Qmod),as.vector(stockDataTs)))),ylab = "Investment return(AUD 100)", xlab = "Trading days",
+     main = "Fitted quadratic curve to the data.", col = "red",lty=2)
+
+lines(as.vector(stockDataTs),type="o")
+
+```
+
+The quadratic model fits way better than the linear model. 
+
+## RESIDUAL ANALYSIS OF THE QUADRATIC MODEL.
+
+```{r}
+Qmod_RA = rstudent(Qmod)
+par(mfrow=c(2,2))
+
+# QQ Plot
+y=Qmod_RA
+qqnorm(y, main = "QQ plot of Standardised residuals")
+qqline(y, col = 'red', lwd = 1, lty = 2)
+
+# Histogram
+
+hist(Qmod_RA,xlab='Standardized Residuals', ylab = 'Frequency',main = "Histogram of Standardised residuals")
+
+# Time Series Plot
+
+plot(y = Qmod_RA, x = as.vector(time(stockDataTs)),xlab = 'Trading Days', ylab='Standardized Residuals',type='l',main = "Time series plot of the Standardised residuals")
+
+# ACF Test
+
+acf(Qmod_RA, main = "AutoCorrelation for Quadratic model.")
+
+
+```
+
+
+```{r}
+# Shapiro-Wilk Normality Test
+
+shapiro.test(Qmod_RA)
+```
+### RESIDUAL ANALYSIS INSIGHTS OF THE QUADRATIC MODEL
+
+1. Nearly every dot aligns with the reference line, indicating that the model is fitted. The left and right tail appear to be closer to the line compared to the linear model.
+
+2. The histogram appears to be symmetric and distributed equally on both sides of 0, which confirms the data is normally distributed.
+
+3. Time series plot shows a slight upward trend, repeating patterns indicating seasonality.
+
+4. Shapiro-Wilk test gives an output of 0.03799. p > 0.05 which suggests that we cannot reject the null hypothesis hence it shows normality of the residuals.
+
+5. Most of the bars are outside the confidence level lines which indicates that there is autocorrelation.
+
+Based on the evidence from the residual analysis we can conclude that the quadratic model is a better fit than linear model.
+
+
+# SEASONAL  OR CYCLICAL TREND
+
+As the stockDataTs time series plot showed seasonality, so a seasonal model is being used.
+
+We calculate the frequency of the data using the sample autocorrelation function (ACF) plot.
+
+```{r}
+acf(stockDataTs, lag.max = 40)
+```
+
+![image](C:\\Users\\prani\\OneDrive\\Desktop\\TimeSeries\\Assignments\\Assign1\\Acf12.png)
+
+
+The above figure shows 1 peak at approximately 12 lags, the markings on the figure show the 12 lags. This figure helps us interpret the frequency as 12.
+
+```{r}
+stockData_W = ts(stockData$Investment_Return, frequency = 12)
+stockData_W
+```
+
+```{r}
+day. <- season(stockData_W, 1:12)
+day.
+
+#Fitting the model
+seasonMod <- lm(stockData_W ~ day. -1) # -1 will remove the intercept term
+
+#Summary statistic
+summary(seasonMod)
+```
+### INSIGHTS FROM THE SEASONAL MODEL
+1.All the coefficients for day are highly significant at significance level of 0.05, as well as the overall model has a p-value less than 0.05 which proves it is significant.
+
+2.The Adjusted R squared value of 0.3725 which indicates that the model was succesful in explaining 37% of the variability in the data.It is pretty low as compared to the other three models. 
+
+3.Multiple R squared value shows the percentage of the dependent variable's variance that the independent variables (days) account for. In this instance, it is 0.4146, meaning that 41% variability is explained by the model.
+
+
+```{r}
+#Plotting the seasonal model
+plot(ts(fitted(seasonMod)), type="l", xlab='Day', ylab='Investment Return ( in AUD)',
+     ylim = c(min(c(fitted(seasonMod), as.vector(stockData_W))), 
+              max(c(fitted(seasonMod), as.vector(stockData_W)))),
+     main = "Fitted seasonal model to investment return .", col="red")
+lines(as.vector(stockData_W),type="o")
+```
+
+Considering the above plot for seasonal model we can see that it doesnt fit the data well enough as the quadratic model. 
+
+## RESIDUAL ANALYSIS OF THE SEASONAL TREND MODEL.
+
+```{r}
+
+seasonMod_RA = rstudent(seasonMod)
+par(mfrow=c(2,2))
+
+
+# QQ Plot
+y=seasonMod_RA
+qqnorm(y, main = "QQ plot of Standardised residuals")
+qqline(y, col = 2, lwd = 1, lty = 2)
+
+# Histogram
+
+hist(seasonMod_RA,xlab='Standardized Residuals', ylab = 'Frequency',main = "Histogram of Standardised residuals")
+
+# Time Series Plot
+
+plot(y = seasonMod_RA, x = as.vector(time(stockData_W)),xlab = 'Trading Week', ylab='Standardized Residuals',type='l',main = "Time series plot of the Standardised residuals")
+
+# ACF Test
+
+acf(seasonMod_RA, main = "AutoCorrelation Function.")
+
+par(mfrow=c(1,1))
+
+```
+
+
+```{r}
+# Shapiro-Wilk Normality Test
+
+shapiro.test(seasonMod_RA)
+```
+
+### RESIDUAL ANALYSIS INSIGHTS OF THE SEASONAL TREND MODEL.
+1.In the QQ plot we can see a significant amount of standardized residuals deviating from the reference line. A very few points were aligned with the reference line specifically between -1 and 1.
+
+2.The histogram seems a bit symmetrical but if we look closely we can see that it is slightly more dense on the left side of the 0. 
+
+3.The ACF plot shows a wave pattern  in the bars  which are outside the confidence limit lines indicating autocorrelation.
+
+4.The time series plot shows repeating patterns between 15 to 25 and an another pattern approximately between 25 to 30. 
+
+5.The Shapiro Wilk test has a value of 1.77e-05 which is less than the significance level, so it rejects the null hypothesis. Therefore we can conclude that the data was not normally distributed.
+
+
+## COSINE MODEL
+
+The deterministic quadratic model is expressed as follows, 
+                μt = β0 + β1cos(2πft) + β2sin(2πft)
+Here the constant term β0 represents a cosine with frequency zero.
+
+```{r}
+#Fitting the cosine curve at the frequency
+
+# calculate cos(2*pi*t) and sin(2*pi*t)
+har.=harmonic(stockData_W,1) 
+
+obs <- data.frame(stockData_W,har.)
+
+cosineMod <- lm(stockData_W ~ cos.2.pi.t. + sin.2.pi.t. , data = obs)
+
+#Summary statistic of the data
+summary(cosineMod)
+```
+### INSIGHTS FROM THE COSINE MODEL
+
+Both the cos and sin coefficients are greater than the significance level.The overall model was also not significant as the p-value(0.7399) is greater than 0.05. The Adjusted R squared is in negative and the Multiple R squared results to 0.003417 which means the cosine model explained 0.03% variability in the  data. This is by far the less compared to the other models used.
+
+```{r}
+#plotting the cosine curve 
+plot(ts(fitted(cosineMod)), ylab='y', main = "Fitted cosine wave to time series data.",
+     ylim = c(min(c(fitted(cosineMod), as.vector(stockData_W))) ,max(c(fitted(cosineMod), as.vector(stockData_W)))), col = "red" )
+
+lines(as.vector(stockDataTs),type="o")
+```
+
+The plot above shows that the cosine model is not a good fit for the data as it fails to capture the data.
+
+### RESIDUAL ANALYSIS OF THE COSINE MODEL.
+```{r}
+cosineMod_RA = rstudent(cosineMod)
+par(mfrow=c(2,2))
+
+
+# QQ Plot
+y=cosineMod_RA
+qqnorm(y, main = "QQ plot of Standardised residuals")
+qqline(y, col = 2, lwd = 1, lty = 2)
+
+# Histogram
+
+hist(cosineMod_RA,xlab='Standardized Residuals', ylab = 'Frequency',main = "Histogram of Standardised residuals")
+
+# Time Series Plot
+
+plot(y = cosineMod_RA, x = as.vector(time(stockData_W)),xlab = 'Trading Week', ylab='Standardized Residuals',type='l',main = "Time series plot of the Standardised residuals")
+
+# ACF Test
+
+acf(cosineMod_RA, main = "AutoCorrelation Function.")
+
+par(mfrow=c(1,1))
+```
+
+```{r}
+# Shapiro-Wilk Normality Test
+
+shapiro.test(cosineMod_RA)
+
+```
+### RESIDUAL ANALYSIS INSIGHTS OF THE COSINE MODEL.
+
+1.The histogram does not show any symmetric distribution.
+
+2.Almost all the points are on the reference line excluding a very few points in the left tail and the right tail.
+
+3.The time series plot show some repeating patterns.
+
+4.Shapiro-Wilk test yields a result of 3.628e-06 which is very small( p < 0.05) so we can reject the null hypothesis.
+
+5.Majority of the bars are outside the confidence limits which means the residuals are correlated and there is autocorrelation.
+
+
+# FORECASTING
+
+Here we select the most suitable model for predicting the investment returns of the next 5 days.The quadratic model was the most appropriate model as it capture more data than any of the other models.All coefficients of the quadratic model were highly significant.It was able to explain 85% of the variability in the data. The standardised residuals were normally distributed comparatively.The remaining models were not suitable because they failed to captre the data, their residuals were not normally distributed and they had minimal R squared values.
+Therefore, we use the quadratic model to predict the investment returns for the next 5 days.
+
+```{r}
+#We use predict() function to h get steps ahead forecasts.
+t <- time(stockDataTs)
+t2 <- t^2
+#5 steps ahead of the forecast  
+h <- 5 
+t <- seq((length(t)+1), (length(t)+h), 1)
+t2 <- t^2
+new_data <- data.frame(t, t2)
+new_data
+
+```
+```{r}
+#Using the predict() function
+forecasts = predict(Qmod, new_data, interval = "prediction")
+print(forecasts)
+```
+
+```{r}
+plot(stockDataTs, xlim = c(1,190), ylim = c(-50,250), xlab='Trading Days', ylab = "Investment returns (AUD)",
+     main = "Forecasts from the quadratic model fitted to the stock data time series.")
+lines(ts(as.vector(forecasts[,1]), start = length(time(stockDataTs)+1)), col="red", type="l")
+lines(ts(as.vector(forecasts[,2]), start = length(time(stockDataTs)+1)), col="blue", type="l")
+lines(ts(as.vector(forecasts[,3]), start = length(time(stockDataTs)+1)), col="blue", type="l")
+legend("topleft", lty=1, pch=1, col=c("black","blue","red"), 
+       text.width = 18, c("Data","5% forecast limits", "Forecasts"))
+```
+
+The forecast intervals are sort of aligned with the stock data. They follow an upward trend with the stock data.   
+
+## Conclusion
+
+The purpose was to fit different models to the stock data and find the best model to predict the investment returns for the next 5 days.
+We used different models such as linear trend model, quadratic model, seasonal model and cosine model.We evaluated the time series plots, scatter plot for the first two lags and performed residual analysis.
+We calculated the frequency of the data required for seasonality and cosine model using the ACF plot.
+Later on we used the best suitable model to forecast the data for the next 5 days.
+After analysing and model fitting , quadratic model was identified as the most suitable, as the overall model was significant and captured majority of the data, explained 85% of variability in the data and had standardised residuals that were normally distributed compared to the other models, furthermore it didnt show any signs of overfitting. 
+
+## REFERENCES
+
+statistics - What is lag in a time series? (n.d.). Mathematics Stack Exchange. https://math.stackexchange.com/questions/2548314/what-is-lag-in-a-time-series
+
+‌Micsellaneous concepts. (2024). Psu.edu. https://astrostatistics.psu.edu/su09/lecturenotes/miscel.html
+
+‌Module 1 and 2 notes from time series class.

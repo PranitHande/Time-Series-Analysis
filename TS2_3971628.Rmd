@@ -1,0 +1,715 @@
+---
+title: "MATH1318 Time Series Analysis - Assignment 2"
+author: "Pranit Hande(S3971628)"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+The global temperature anomaly data is derived from NOAA's Global Surface Temperature Analysis, which uses extensive data collections encompassing both land and ocean surfaces to give comprehensive global coverage. These databases provide data from 1850 to the present day. Temperature anomalies on a global basis are calculated with respect to the average between 1901 and 2000. The full dataset from 1850 to 2023 will be used for analysis.
+
+# Setup
+```{r}
+# Clear the environment and the console
+rm(list = ls()); cat("\f")
+```
+
+## Importing libraries
+```{r warning=FALSE}
+#Importing all the required libraries.
+library(TSA)
+library(dplyr)
+library(readr)
+library(tseries)
+library(lmtest)
+library(forecast)
+
+```
+
+## UNIT ROOT TESTS
+
+**1. Augmented Dickey-Fuller Test (ADF):**
+
+H0: Series is non stationary
+
+HA: Series is stationary
+
+So, we want to **reject the null hypothesis to conclude the stationarity.**
+
+**2.Phillips-Perron Test (PP):**
+
+H0: Series is non stationary
+
+HA: Series is stationary
+
+So, we want to **reject the null hypothesis to conclude the stationarity.**
+
+**3. Kwiatkowski-Phillips-Schmidt-Shin (KPSS) Test:**
+
+H0: Series is stationary
+
+HA: Series is non stationary
+
+So, we want to **fail to reject the null hypothesis to conclude the stationarity.**
+
+## UTILITY FUNCTIONS
+
+### Function to run all the unit root tests( ADF, PP, KPSS)
+
+```{r}
+unit_root_tests <- function(time_series) {
+  suppressWarnings({
+  # Perform Augmented Dickey-Fuller (ADF) test
+  adf_test <- adf.test(time_series)
+
+  
+  # Perform Phillips-Perron (PP) test
+  pp_test <- pp.test(time_series)
+  
+  # Perform Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
+  kpss_test <- kpss.test(time_series)
+  
+  # Print ADF test results
+  cat("Augmented Dickey-Fuller (ADF) Test:\n")
+  print(adf_test)
+  cat("\n")
+  cat(rep("-", 30), "\n")
+
+  
+  # Print PP test results
+  cat("Phillips-Perron (PP) Test:\n")
+  print(pp_test)
+  cat("\n")
+  cat(rep("-", 30), "\n")
+
+  
+  # Print KPSS test results
+  cat("Kwiatkowski-Phillips-Schmidt-Shin (KPSS) Test:\n")
+  print(kpss_test)
+  cat(rep("-", 30), "\n")
+
+  })
+}
+
+
+```
+
+### Function to sort AIC and BIC Scores
+
+```{r}
+sort.score <- function(x, score = c("bic", "aic")){
+  if (score == "aic"){
+    x[with(x, order(AIC)),]
+  } else if (score == "bic") {
+    x[with(x, order(BIC)),]
+  } else {
+    warning('score = "x" only accepts valid arguments ("aic","bic")')
+  }
+}
+
+```
+
+# AIM
+
+The goal is to propose ARIMA models using numerous model's specification tools, perform parameter estimation, and choose the most optimal model based on goodness-of-fit measures. 
+
+
+## Reading the data
+```{r}
+temperature <- read_csv("assignment2Data2024.csv", col_names = TRUE, show_col_types = FALSE)
+head(temperature)
+
+```
+## Summary statistic of the data
+
+```{r}
+summary(temperature)
+```
+
+The anomalies, evaluated range from -0.44 to 0.91. The median anomaly for this period is 0.00, indicating a balance of positive and negative deviations from the average. However, the mean anomaly is somewhat skewed to the positive side, indicating that temperatures are slightly higher than the long-term norm. The interquartile range, -0.1275 to 0.23, encompasses the middle 50% of the data, demonstrating the variability in global temperature anomalies across time.
+
+## Analysis of the time series in terms of the 5 valid points
+
+We imported the Global Land Temperature Anomalies series into R and then we convert the series to a time series with a frequency of 1 as each observations is changed anually.
+
+```{r}
+temp_ts <- ts(temperature$Anomaly, start = 1850, frequency = 1)
+```
+
+```{r}
+#Class of the time series
+class(temp_ts)
+```
+
+```{r }
+
+plot(temp_ts, type = "o", xlab = "Year", ylab = "Temperature Anamolies(Celcius)", main = "Fig 1.Time series plot of Tempreture Anomaly time series")
+
+```
+
+(Fig 1 is considered in the below analysis for the 5 valid points  )
+
+**5 VALID POINTS:**
+
+**1.TREND:** Overall the graph in Fig 1 shows a upward trend indicating a global increase in temperature anomalies. The trend starts to lift up from 1910 onwards.
+
+**2.SEASONALITY:** No seasonality can be observed in the time series.
+
+**3.CHANGE IN VARIANCE:** There is no sign of change of variance in the time series plot. 
+
+**4.BEHAVIOR:** The graph exhibits auto regressive (AR) behavior and there are no clear signs of moving average behavior.Successive points through out the plot indicate auto regressive behavior.
+
+**5.CHANGE POINT:** There is no clear sign of a change point. But if we want to consider a change point we can consider the point near 1940 indicating a sudden spike. Apart from that we can see a sudden decline in 1900.But these points are not significant to prove the existence of a change point.
+
+
+## FIRST LAG
+
+```{r}
+plot(y = temp_ts, x = zlag(temp_ts),ylab = "Temperature Anomaly(Celcius)", xlab = "Temperature Anomaly with 1 year lag(t-1)", main = " Fig 2.Scatterplot of the neighbouring temperature anomaly values")
+
+```
+
+```{r}
+y = temp_ts
+
+x = zlag(temp_ts)
+
+index = 2:length(x)
+
+cat("The correlation for the first lag is: ",cor(y[index], x[index]))
+
+```
+
+The value of correlation for the first lag is 0.9399931 indicating a strong positive correlation.As a result, it is reasonable to conclude that prior years' temperature anomalies will have a major impact on subsequent years' temperature anomalies.Autoregressive behavior results in increased correlation, specially in the first lag.
+
+
+# Evaluating both stationarity and non-stationarity.
+
+## ACF and PACF Plots
+
+```{r fig.cap="Fig 3.ACF and PACF plots of the time series data"}
+par(mfrow = c(1,2))
+acf(temp_ts,main= "ACF of Global scale temperature series.")
+pacf(temp_ts, main = "PACF of Global scale temperature series")
+
+```
+
+We can see a slowly decaying pattern in the (Fig 3) ACF plot and there is a very significant first lag in PACF. All of this points towards the series being non stationary.We also perform unit root tests to evaluate the series to check if it is stationary or not.
+
+
+## Unit root tests on the time series data
+
+```{r}
+#Unit root tests on the time series data
+unit_root_tests(temp_ts)
+```
+
+After performing the unit root tests, we get a p value of 0.9 and 0.4 for Augmented Dickey-Fuller(ADF) Test and Phillips-Perron (PP) Test respectively which is greater than the significance level of 0.05 and the borderline value of 0.03( borderline range 0.03 - 0.10),so we fail to reject the null hypothesis indicating that the series is non stationary.
+
+Whereas the p value of Kwiatkowski-Phillips-Schmidt-Shin (KPSS) Test is 0.01 which is less than the significance level 0.05 and borderline range of 0.03.Therefore,we reject the null hypothesis.So we accept the alternate hypothesis that is the series is not stationary
+
+**So we have sufficient evidence to say that the time series is non stationary.**
+
+## Checking normality in the time series data
+
+After completing the unit root tests ,we proceed to check the normality of the time series data using a QQ-plot and Shapiro-Wilk test.
+
+```{r}
+## Checking normality in the time series data
+qqnorm(temp_ts, main = "Fig 4. Normal QQ Plot of time series data")
+qqline(temp_ts, col = 'blue')
+
+```
+
+From the above QQ plot(fig 4),we can infer that there is **no normality**. The points at the left and the right tails are misaligned from the reference line and very few points are aligned with the line. 
+
+```{r}
+# Shapiro-Wilk Normality Test of the time series data
+shapiro.test(temp_ts)
+```
+
+Since the p value(1.897e-06) of Shapiro-Wilk test is significantly less than the 0.05 we would reject the null hypothesis and we can assume that the data is **not normally distributed**
+
+# Transformation
+
+The time series data contains negative values, and as Box Cox transformation is performed on positive values as it as it involves taking the natural logarithm of the data (for λ ≠ 0). To make the time series data positive we add a constant term before performing the transformation.We find the minimum value and add the absolute value of the minimum value to all values in the dataset.
+
+```{r}
+#Minimum value of the dataset
+
+cat("Minimum value in the data:", min(temp_ts))
+```
+## Box Cox Plot
+
+A Box Cox transformation is performed on the time series data to stabilize variance, but as there were no clear signs of change in variance we will just observe the transformation on the data.
+
+```{r warning=FALSE , fig.cap="Fig 5. Box Cox Plot of Time series data"}
+tempTs <- temp_ts + abs(min(temp_ts))+ 0.01
+TempTsBC <- BoxCox.ar(tempTs)
+
+```
+
+```{r}
+# The value of the first and the last line in the Box Cox plot.
+TempTsBC$ci
+```
+
+```{r}
+# lambda value (middle line) in the box cox plot
+lambda <- TempTsBC$lambda[which(max(TempTsBC$loglike) == TempTsBC$loglike)]
+lambda
+
+```
+From Fig 5 we can see that the lambda value of 1 falls inside the 95% confidence interval,that is 0.9 and 1.1 in this case. Therefore, **lambda value of 1 suggests that no transformation is needed, which is equivalent to using the original time series data.**
+
+## Box Cox Transformation
+
+We plot a time series plot of the box cox transformation and its clearly visible in Fig 6 that there are no changes. It is same as the time series plot of the original time series data (Fig 1).
+
+```{r}
+
+TempBCx <- ((tempTs^lambda) - 1) / lambda
+plot(TempBCx, type="o", xlab = "Years", ylab = "Variation in temperature anamoly ", main = "Fig 6.Time series plot of Box Cox transformed time series data")
+```
+
+## QQplot of the transformed time series data
+
+Below is the QQ plot of the transformed series(Fig 7). Compared to the QQ plot of the original time series(Fig 4) we see no difference. The points on the left and the right tail are misaligned and a very few of them are on the reference line which indicates that it is not normally distributed. Furthermore, the p-value of Shapiro Wilk test for the transformed series(p-value 1.897e-06) is less than significance value of 0.05 rejecting the null hypothesis ,indicating no normality.
+
+```{r}
+qqnorm(TempBCx, main = " Fig 7.Normal Q-Q Plot for the Box-Cox \ntransformed Temperature Anomaly series.")
+qqline(TempBCx, col = "blue")
+
+```
+
+```{r}
+# Shapiro-Wilk Normality Test for the Box Cox Transformed time series
+
+shapiro.test(TempBCx)
+
+```
+
+**As no significant changes were observed after the box cox transformation and the lambda = 1 which suggests that the transformation was unnecessary so we will use the original time series for further evaluation.**
+
+
+# Differencing
+
+## First Difference
+
+Applying differencing to the original time series data Temperature Anomaly Series to make it a stationary series.
+
+```{r}
+tempDiff <- diff(temp_ts, differences = 1)
+plot(tempDiff, type="o", xlab = "Years", ylab = "First difference of Temperature anamoly series", main = " Fig 8.Time series plot of First Difference of \nTemperature Anomaly Series.")
+```
+
+In the above Fig 8 ,we can see a flat mean level after performing first differencing, this indicates that the trend in the time series has been removed.This suggests that the time series is stationary.To validate this claim we will plot the ACF and PACF plots and perform unit root tests. 
+
+## ACF and PACF plot of the first differenced time series
+
+```{r fig.cap="Fig 9. ACF and PACF Plots of First differenced time series"}
+par(mfrow = c(1,2))
+acf(tempDiff,main =  "ACF plot of First Differenced \nTemperature Anomaly series")
+pacf(tempDiff, main = "PACF plot of First Differenced \nTemperature Anomaly series")
+
+```
+
+From the above plots in Fig 9, for the first differenced series, we can see that there is no slowly decaying pattern in the ACF plot and there is no significant first lag in PACF plot.We have sufficient evidence to say that the first differenced series is stationary.To solidify our claim we will perform unit root tests. These test will give us additional evidence to prove the stationarity of the series.
+
+## Unit root test on the first differenced series
+
+```{r}
+#Unit root test on the first differenced series
+unit_root_tests(tempDiff)
+
+```
+
+From the above results of the unit root tests on the first differenced series we infer the following: 
+
+The p value of 0.01 for Augmented Dickey-Fuller Test is less than the significance level of 0.05 and the borderline value of 0.03 (borderline range 0.03-0.1), that means we reject the null hypothesis, proving that the first differenced series is stationary.
+
+The Phillips-Perron (PP) Test gives a value of 0.01 which is less than the significance level pf 0.05 and the borderline valueof 0.03, so we can reject the null hypothesis and say that the first differenced series is stationary.
+
+The p value of 0.1 for Kwiatkowski-Phillips-Schmidt-Shin (KPSS) Test is greater than the significance level of 0.05 which means we reject the null hypothesis, which proves that the alternate hypothesis is true, that is series is stationary.
+
+**The results of ACF plot, PACF plot and the unit root tests prove that the series is stationary.**
+
+# Model Specification
+
+## ACF and PACF plots of the first differenced series
+
+```{r fig.cap="Fig 10.ACF and PACF Plot of the first differenced series"}
+par(mfrow = c(1,2))
+acf(tempDiff,main =  "ACF plot of First Differenced \nTemperature Anomaly series")
+pacf(tempDiff, main = "PACF plot of First Differenced \nTemperature Anomaly series")
+```
+![image](C:\\Users\\prani\\OneDrive\\Desktop\\TimeSeries\\Assignments\\Assign2\\AP.png)
+
+(Image 1: ACF and PACF plots of First Differenced Series)
+
+Considering the above ACF and PACF plots in Fig 10 ,we will count the bars that are above the confidence limit line(blue dashed line).From the ACF plot of the first differenced series,lag(1) can be considered as significant and we can also consider one more lag that is lag(2) that touches the confidence limit line.Other than that we can ignore the rest of the lags as they are marked as late lags.So we can consider the value of q as 1 and 2. 
+
+In PACF plot we can observe one significant lag(1),and the later lags are considered as late lags so we can take value of p as 1.
+
+*Image 1 shows all the marked lags as mentioned above.*
+
+The value of d can be assumed as 1 as we performed only one differencing(d = 1).
+
+**The final models from the PACF and ACF plots are ARIMA(p,d,q):**
+**{ARIMA(1,1,1),**
+**ARIMA(1,1,2)}**
+
+## Extended ACF plot (EACF)
+
+The next step is to perform EACF plot on the first differenced series and extract models.
+In EACF plot we select the most top left '0' point which was AR = 0,MA = 2 in this case.The 0 should not be distracted by any x in the row and then we follow the vertex downward . The left hand side is the p value and top is the q value. 
+
+```{r}
+#EACF plot of the first differenced series
+eacf(tempDiff, ar.max = 5, ma.max = 5)
+
+```
+![image2](C:\\Users\\prani\\OneDrive\\Desktop\\TimeSeries\\Assignments\\Assign2\\EACF.png)
+
+(Image 2: EACF plot of First Differnced Series)
+
+Here we consider the most top left 0 point and its neighboring values and extract the models.
+The neighboring values are marked in the above image 2 of the plotted EACF plot of the first differenced series.
+
+**The models that were extracted from the EACF plot were ARIMA(p,d,q):**
+**{ARIMA(0,1,2),**
+**ARIMA(1,1,2),**
+**ARIMA(0,1,3),**
+**ARIMA(1,1,3)}**
+
+
+## Bayesian Information Criterion (BIC) Model
+
+In this step we use the BIC plot to extract the models. The top row in the plot is considered as the best model .The darker shaded cells have a lower BIC value and they are preferred as the better models.
+
+We are considering the value of the parameters "nar" and "nma" as 5 as we have small values in our models.
+
+
+```{r warning=FALSE, fig.cap="Fig 11. BIC plot for first differenced series"}
+TempBIC = armasubsets(y=tempDiff, nar=5, nma=5, y.name='p', ar.method='ols')
+plot(TempBIC)
+
+```
+
+From the above BIC plot(Fig 11) the values of p and q were extracted as follows.
+p = 2,1
+q = 4,1,0
+
+From Fig 11, we considered the above value p = 2 that is p-lag2 which is in the first row that is the best model and it is also strongly supported till model 4, which is indicated by the shaded cells below it. As with p = 1 that is p-lag1, it appears in model 3 followed by model 4, which can be considered as a fair candidate for the value of p.
+Similarly with q = 4 that is error-lag4 appears in model 2 which is can be considered as a feasible model. Moving on to q = 1 that is error-lag1 appears in model 3 and is supported till model 6, which makes it a fair candidate. And we consider q = 0 as there was no value for q in model 1.
+
+**The proposed models from the BIC plot were:**
+**{ARIMA(2,1,4)**
+**ARIMA(2,1,1)**
+**ARIMA(2,1,0)**
+**ARIMA(1,1,4)**
+**ARIMA(1,1,1)**
+**ARIMA(1,1,0)}**
+
+
+These are all the Set of Models that were extracted from ACF, PACF, EACF and BIC plots:
+ARIMA(2,1,4)
+ARIMA(2,1,1)
+ARIMA(2,1,0)
+ARIMA(1,1,4)
+ARIMA(1,1,1)
+ARIMA(1,1,0)
+ARIMA(0,1,2)
+ARIMA(1,1,2)
+ARIMA(0,1,3)
+ARIMA(1,1,3)
+ARIMA(1,1,1)
+ARIMA(1,1,2)
+
+Among these models there were two models that were common among the plots, they were as follows.
+ARIMA(1,1,2)
+ARIMA(1,1,1)
+
+AS these models were common among the plots, we can infer that these models could be potentially suitable for our time series data and that we are on the right track. We will need to conduct further analysis to determine the best models for our time series data.So we perform model fitting in the next steps.
+
+# MODEL FITTING
+
+Maximum Likelihood estimation(ML) and Least Square estimation(CSS) methods were performed on the set of possible models.CSS-ML estimation was only performed on models when ML estimation and CSS estimation did not agree on significance of coefficients.
+
+Here we use the original time series data for the analysis.
+
+### ARIMA(2,1,4)
+
+```{r}
+
+model_214_ml = Arima(temp_ts,order=c(2,1,4),method='ML')
+coeftest(model_214_ml)
+
+model_214_css = Arima(temp_ts,order=c(2,1,4),method='CSS')
+coeftest(model_214_css)
+
+```
+
+After performing ML estimation and Least Square(CSS) on ARIMA(2,1,4) , we can see that all the coefficients are insignificant which is not a good sign. The same insignificant coefficients from the ML estimation were consistent across the CSS method.So we can say that the model ARIMA(2,1,4) is not a optimal model.
+
+### ARIMA(2,1,1)
+
+```{r}
+
+model_211_ml = Arima(temp_ts,order=c(2,1,1),method='ML')
+coeftest(model_211_ml)
+
+model_211_css = Arima(temp_ts,order=c(2,1,1),method='CSS')
+coeftest(model_211_css)
+
+```
+
+From the above results we can see that we have one(ar2) significant value and two insignificant values after performing ML estimation method. Least square estimation(CSS) had the same one(ar2) significant value and two insignificant values.As there were more insignificant values we can say that model ARIMA(2,1,1) is not good. As CSS and ML estimation method agreed on the significant and insignificant values we will not perform CSS-ML method.
+
+### ARIMA(2,1,0)
+
+```{r}
+
+
+model_210_ml = Arima(temp_ts,order=c(2,1,0),method='ML')
+coeftest(model_210_ml)
+
+model_210_css = Arima(temp_ts,order=c(2,1,0),method='CSS')
+coeftest(model_210_css)
+
+model_210_CSSml = Arima(temp_ts,order=c(2,1,0),method='CSS-ML')
+coeftest(model_210_CSSml)
+
+```
+
+Above results shows that ML estimation for ARIMA(2,1,0) had one (ar2) significant value
+and one (ar1) insignificant value. This pattern was consistent throughout the CSS method.Based on the above result we may not be sure if the model is good or bad. 
+
+
+### ARIMA(1,1,4)
+
+```{r}
+
+model_114_ml = Arima(temp_ts,order=c(1,1,4),method='ML')
+coeftest(model_114_ml)
+
+model_114_css = Arima(temp_ts,order=c(1,1,4),method='CSS')
+coeftest(model_114_css)
+
+```
+
+We performed ML estimation on ARIMA(1,1,4) and we get ma2 as the significant values
+and the rest ar1, ma1, ma3 and ma4 are insignificant. CSS method had ma2 as the significant values and the rest were insignificant.As there were more insignificant values we can say that the ARIMA(1,1,4) is not a suitable model for the time series.
+
+### ARIMA(1,1,1)
+
+```{r}
+
+model_111_ml = Arima(temp_ts,order=c(1,1,1),method='ML')
+coeftest(model_111_ml)
+
+model_111_css = Arima(temp_ts,order=c(1,1,1),method='CSS')
+coeftest(model_111_css)
+
+```
+
+Based on the above results we have all the coefficients as significant across both ML estimation and CSS methods.So it is safe to say that the model ARIMA(1,1,1) can be considered as a optimal model for the time series.
+
+
+### ARIMA(1,1,0)
+
+```{r}
+
+model_110_ml = Arima(temp_ts,order=c(1,1,0),method='ML')
+coeftest(model_110_ml)
+
+model_110_css = Arima(temp_ts,order=c(1,1,0),method='CSS')
+coeftest(model_110_css)
+
+```
+
+ML estimation for ARIMA(1,1,0) had only one coefficient(ar1) which was not significant. The results remain the same and there was not much change after performing CSS method. As we have insignificant values we will consider this model not suitable.
+
+### ARIMA(0,1,2)
+
+```{r}
+
+model_012_ml = Arima(temp_ts,order=c(0,1,2),method='ML')
+coeftest(model_012_ml)
+
+model_012_css = Arima(temp_ts,order=c(0,1,2),method='CSS')
+coeftest(model_012_css)
+```
+
+Above we perform ML estimation and CSS method on ARIMA(0,1,2) model. In both methods we get all the coefficients as significant. So as all the values were significant we can say that ARIMA(0,1,2) is a good model.
+
+
+### ARIMA(1,1,2)
+
+```{r}
+
+model_112_ml = Arima(temp_ts,order=c(1,1,2),method='ML')
+coeftest(model_112_ml)
+
+model_112_css = Arima(temp_ts,order=c(1,1,2),method='CSS')
+coeftest(model_112_css)
+
+```
+
+Taking into consideration the above results ARIMA(1,1,2) had ma2 as the significant coefficient across ML estimation and CSS methods.And ar1 and ma1 coefficients were insignificant. In conclusion we can say that ARIMA(1,1,2) is not a good model as there were more insignificant coefficients.
+
+
+### ARIMA(1,1,3)
+
+```{r}
+
+model_113_ml = Arima(temp_ts,order=c(1,1,3),method='ML')
+coeftest(model_113_ml)
+
+model_113_css = Arima(temp_ts,order=c(1,1,3),method='CSS')
+coeftest(model_113_css)
+
+```
+
+The consistent significance of all the coefficients from the above results in ML estimation and CSS methods proves that the model ARIMA(1,1,3) is a good fit for the time series data.
+
+### ARIMA(0,1,3)
+
+```{r}
+
+model_013_ml = Arima(temp_ts,order=c(0,1,3),method='ML')
+coeftest(model_013_ml)
+
+model_013_css = Arima(temp_ts,order=c(0,1,3),method='CSS')
+coeftest(model_013_css)
+
+```
+
+Above results depict ARIMA(0,1,3) had ma2 as the significant value and ma1 and ma2 as insignificant values across ML estimation and CSS methods. As there were more insignificant values we can say that the model ARIMA(0,1,3) as not good.
+
+**Overall after performing ML estimation, CSS and CSS-ML methods for all the possible models we got the following models that seemed suitable for our time series.**
+**{ARIMA(1,1,1),**
+**ARIMA(1,1,3),**
+**ARIMA(0,1,2)}**
+
+
+# GOODNESS OF FIT METRICS
+
+Akaike Information Criterion(AIC) and Bayesian Information Criterion(BIC) tests were performed on the set of possible models.
+
+We find the AIC and the BIC values for the models by using sort.score function for all the possible models.We input the ML estimation for all the models in the function. Then we select the model with the lower AIC and BIC score. Lower the score better the model.This function was sourced from canvas developed by one of the alumni.
+
+## Akaike Information Criterion(AIC) Values
+
+```{r}
+
+sort.score(AIC(model_214_ml,model_211_ml,model_210_ml,model_114_ml,model_111_ml,model_110_ml,model_012_ml,model_112_ml,model_013_ml,model_113_ml), score = "aic")
+
+```
+**Best Model According to AIC values: ARIMA(1,1,3)** 
+ARIMA(1,1,3) model had a AIC value of -354.6 which was less than all the other models.
+
+## Bayesian Information Criterion(BIC) Values
+```{r}
+
+sort.score(BIC(model_214_ml,model_211_ml,model_210_ml,model_114_ml,model_111_ml,model_110_ml,model_012_ml,model_112_ml,model_013_ml,model_113_ml ), score = "bic" )
+
+```
+**Best Model According to BIC values: ARIMA(2,1,0)**
+ARIMA(2,1,0) had a BIC value of -343.8 which was less compared to the other models.
+
+## ERROR MEASURES
+
+Then we calculate error measures for all possible models. These metrics are calculated using the fitted and observed values.
+
+```{r}
+Smodel_214_css <- accuracy(model_214_css)[1:7]
+Smodel_211_css <- accuracy(model_211_css)[1:7]
+Smodel_210_css <- accuracy(model_210_css)[1:7]
+Smodel_114_css <- accuracy(model_114_css)[1:7]
+Smodel_111_css <- accuracy(model_111_css)[1:7]
+Smodel_110_css <- accuracy(model_110_css)[1:7]
+Smodel_012_css <- accuracy(model_012_css)[1:7]
+Smodel_112_css <- accuracy(model_112_css)[1:7]
+Smodel_113_css <- accuracy(model_113_css)[1:7]
+Smodel_013_css <- accuracy(model_013_css)[1:7]
+
+
+df.Smodels <- data.frame(
+  rbind(Smodel_214_css,Smodel_211_css,Smodel_210_css,Smodel_114_css,Smodel_111_css,Smodel_110_css,Smodel_012_css,Smodel_112_css,Smodel_013_css,Smodel_113_css)
+)
+colnames(df.Smodels) <- c("ME", "RMSE", "MAE", "MPE", "MAPE", 
+                          "MASE", "ACF1")
+rownames(df.Smodels) <- c("ARIMA(2,1,4)", "ARIMA(2,1,1)", "ARIMA(2,1,0)", 
+                          "ARIMA(1,1,4)", "ARIMA(1,1,1)", "ARIMA(1,1,0)", "ARIMA(0,1,2)",
+                          "ARIMA(1,1,2)","ARIMA(1,1,3)","ARIMA(0,1,3)")
+round(df.Smodels, digits= 3)
+
+
+```
+
+After evaluating the error measures for all the possible set of models, ARIMA(2,1,0) stands as the optimal model, outperforming the rest.The mean error(ME) value of 0.007 indicates that the models prediction is overestimated by 0.007 units, that is really low. The Root mean Square(RMSE) value of 0.084 is the average magnitude of errors between the actual values and the predicted values.And lower the RMSE value the better the accuracy. Mean absolute error(MAE) of 0.062 and Mean Absolute Scaled Error (MASE) value of 0.867.
+
+# Inference
+
+The following models were considered optimal based on the AIC value, BIC value, ML estimation method, least squares(CSS) method, CSS-ML method and Error measures.
+{ARIMA(1,1,1),
+ARIMA(1,1,3),
+ARIMA(0,1,2),
+ARIMA(2,1,0)}
+
+Among the optimal models evaluated, ARIMA(1,1,3) performed best in terms of AIC value, with all coefficients indicating significance across Maximum Likelihood (ML) estimation and Least Squares (CSS)methods.
+ARIMA(0,1,2) and ARIMA(1,1,1) showed significance for all coefficients in both the ML estimation and CSS methods.
+Meanwhile, ARIMA(2,1,0) was, nonetheless, rated the best choice based on BIC value and error metrics, despite having only one significant coefficient consistently detected across ML estimation, CSS, and CSS-ML approaches.
+
+Given the substantial findings regarding the most optimal model suggested by error measures, specifically ARIMA(2,1,0), it appears to have insignificant coefficients across both ML estimation and CSS methods. This discrepancy shows that the model's performance may be compromised, despite being defined as optimal based on BIC and error measures. In light of this, an alternate model, such as ARIMA(1,1,3), appears to be a good candidate. ARIMA(1,1,3) was chosen as the best model by AIC and has all significant coefficients across ML estimation and CSS methods. Furthermore, with only four coefficients, ARIMA(1,1,3) can be considered a relatively small model.Additionally, the error measure values for ARIMA(1,1,3) are not significantly different from those of ARIMA(2,1,0), which was considered ideal by error measures. Therefore we can consider ARIMA(1,1,3) as the best model for the time series. 
+
+
+# Overparameterised models for ARIMA(1,1,3) are ARIMA(2,1,3) and ARIMA(1,1,4)
+
+Here we add 1 value in p value and q value of the ARIMA(1,1,3) model and perform ML estimation ,CSS and CSS-ML methods.
+
+### ARIMA(2,1,3)
+
+```{r}
+
+# ARIMA(2,1,3)
+model_213_ml = Arima(temp_ts,order=c(2,1,3),method='ML')
+coeftest(model_213_ml)
+
+model_213_css = Arima(temp_ts,order=c(2,1,3),method='CSS')
+coeftest(model_213_css) 
+
+model_213_cssML = Arima(temp_ts,order=c(2,1,3),method='CSS-ML')
+coeftest(model_213_cssML) 
+
+
+```
+From the above results we can see that the new overparameterised model ARIMA(2,1,3) has many insignificant values across all the three estimations that suggests it is not better than the original model ARIMA(1,1,3). So we can say that we dont have any new oppurtunities with this new model.
+
+### ARIMA(1,1,4)
+```{r}
+
+# ARIMA(1,1,4)
+model_114_ml = Arima(temp_ts,order=c(1,1,4),method='ML')
+coeftest(model_114_ml)
+
+model_114_css = Arima(temp_ts,order=c(1,1,4),method='CSS')
+coeftest(model_114_css)
+
+model_114_cssML = Arima(temp_ts,order=c(1,1,4),method='CSS-ML')
+coeftest(model_114_cssML)
+
+```
+
+Above results of ARIMA(1,1,4) has a lot of insignificant values across all the estimation methods and we can say that this model is also not better than the original model ARIMA(1,1,3), so even here we can conclude that we don't have any good chance with this model.
+
+# Summary & Conclusion
+
+The time series analysis began with an examination at five valid points, followed by summarizing data and an evaluation of the first lag. ACF and PACF plots were used to assess stationarity and non-stationarity, respectively, with unit root tests demonstrating non-stationarity. Normality was determined using QQ plots and the Shapiro test, which revealed a non-normal distribution. Although a Box-Cox transformation was initially considered unnecessary due to a lambda value of one, differencing was applied to ensure stationarity, resulting in a flat mean position on the time series plot. Stationarity was further validated by ACF and PACF plots, which were supported by unit root tests. The model specifications included outlined models from ACF, PACF, Extended ACF, and BICplots.
+Model fitting was accomplished using ML estimation, CSS estimation, and CSS-ML estimation, as well as goodness-of-fit criteria such as AIC and BIC. These findings lead to the identification of the optimal model, ARIMA(1,1,3). Overparameterizing the model had no effect on improvements over the initial model.
